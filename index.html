@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Office Search - Heart & Honor Home Team</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/firebase@10.0.0/app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/firebase@10.0.0/database.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #fafaf8; }
+    .app { display: flex; flex-direction: column; height: 100vh; }
+    .header { background: white; border-bottom: 1px solid #e1e0d9; padding: 2rem; }
+    .header h1 { font-size: 28px; font-weight: 500; color: #0b0b0b; margin-bottom: 4px; }
+    .header p { font-size: 14px; color: #52514e; }
+    .container { display: flex; flex: 1; overflow: hidden; }
+    .sidebar { width: 320px; border-right: 1px solid #e1e0d9; background: white; overflow-y: auto; padding: 1.5rem; }
+    .sidebar h3 { font-size: 13px; font-weight: 600; text-transform: uppercase; color: #52514e; margin: 1.5rem 0 1rem 0; }
+    textarea, input, select { width: 100%; padding: 8px 12px; border: 1px solid #e1e0d9; border-radius: 6px; font-family: inherit; margin-bottom: 8px; }
+    textarea:focus, input:focus, select:focus { outline: none; border-color: #378add; background: #e6f1fb; }
+    .btn { padding: 10px 16px; border-radius: 6px; border: none; font-size: 13px; font-weight: 500; cursor: pointer; width: 100%; margin-top: 8px; }
+    .btn-primary { background: #378add; color: white; }
+    .btn-primary:hover { background: #1f5fa5; }
+    .btn-danger { background: #e24b4a; color: white; }
+    .property-item { padding: 12px; margin-bottom: 8px; border: 1px solid #e1e0d9; border-radius: 6px; cursor: pointer; }
+    .property-item.active { background: #e6f1fb; border-color: #378add; }
+    .property-item-title { font-size: 13px; font-weight: 500; color: #0b0b0b; margin-bottom: 4px; }
+    .property-item-meta { font-size: 12px; color: #52514e; margin-bottom: 6px; }
+    .property-item-status { font-size: 11px; font-weight: 500; padding: 4px 8px; border-radius: 4px; display: inline-block; }
+    .status-not-contacted { background: rgba(88, 166, 255, 0.08); color: #185FA5; }
+    .status-interested { background: rgba(99, 153, 34, 0.08); color: #3B6D11; }
+    .status-pending { background: rgba(186, 117, 23, 0.08); color: #854F0B; }
+    .status-pass { background: rgba(163, 45, 45, 0.08); color: #993556; }
+    .main { flex: 1; overflow-y: auto; padding: 2rem; }
+    .empty-state { display: flex; align-items: center; justify-content: center; height: 100%; color: #898781; }
+    .property-detail { background: white; border-radius: 12px; padding: 2rem; border: 1px solid #e1e0d9; }
+    .detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem; padding-bottom: 1.5rem; border-bottom: 1px solid #e1e0d9; }
+    .detail-header h2 { font-size: 24px; font-weight: 500; color: #0b0b0b; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+    .detail-section h3 { font-size: 13px; font-weight: 600; text-transform: uppercase; color: #0b0b0b; margin-bottom: 1rem; }
+    .form-group { margin-bottom: 1rem; }
+    .form-group label { display: block; font-size: 12px; font-weight: 500; color: #52514e; margin-bottom: 6px; }
+    .form-group textarea { min-height: 120px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyBogesoWp8z-Vdfx-DVUlWErSqIpY7o05k",
+      authDomain: "heart-honor-office-location.firebaseapp.com",
+      databaseURL: "https://heart-honor-office-location-default-rtdb.firebaseio.com",
+      projectId: "heart-honor-office-location",
+      messagingSenderId: "1055603035472",
+      appId: "1:1055603035472:web:d6a6d3e27a88b33e5bf055"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const { useState, useEffect } = React;
+
+    function App() {
+      const [properties, setProperties] = useState([]);
+      const [selected, setSelected] = useState(null);
+      const [notes, setNotes] = useState('');
+      const [url, setUrl] = useState('');
+      const [sortBy, setSortBy] = useState('address');
+      const [filterStatus, setFilterStatus] = useState('all');
+
+      useEffect(() => {
+        db.ref('properties').on('value', snap => {
+          if (snap.val()) {
+            setProperties(Object.entries(snap.val()).map(([k, v]) => ({ id: k, ...v })));
+          }
+        });
+      }, []);
+
+      useEffect(() => {
+        if (selected) {
+          const p = properties.find(x => x.id === selected);
+          setNotes(p?.notes || '');
+        }
+      }, [selected, properties]);
+
+      const addListing = async () => {
+        if (!url.trim()) return alert('Paste a LoopNet URL');
+        await db.ref('properties').push({
+          address: 'New Listing',
+          loopnetUrl: url,
+          status: 'Not Contacted',
+          notes: '',
+          createdAt: new Date().toISOString()
+        });
+        setUrl('');
+        alert('Added!');
+      };
+
+      const updateProp = async (field, val) => {
+        if (!selected) return;
+        await db.ref(`properties/${selected}`).update({ [field]: val });
+      };
+
+      const saveNotes = async () => {
+        if (!selected) return;
+        await db.ref(`properties/${selected}`).update({ notes });
+        alert('Saved!');
+      };
+
+      const deleteProp = async () => {
+        if (!selected || !confirm('Delete?')) return;
+        await db.ref(`properties/${selected}`).remove();
+        setSelected(null);
+      };
+
+      const filtered = properties
+        .filter(p => filterStatus === 'all' || p.status === filterStatus)
+        .sort((a, b) => {
+          if (sortBy === 'rent') return (a.rent || 0) - (b.rent || 0);
+          return (a[sortBy] || '').toString().localeCompare((b[sortBy] || '').toString());
+        });
+
+      const prop = properties.find(p => p.id === selected);
+
+      return React.createElement('div', { className: 'app' },
+        React.createElement('header', { className: 'header' },
+          React.createElement('h1', null, 'Office Search'),
+          React.createElement('p', null, 'Heart & Honor Home Team')
+        ),
+        React.createElement('div', { className: 'container' },
+          React.createElement('div', { className: 'sidebar' },
+            React.createElement('h3', null, 'Add Listing'),
+            React.createElement('textarea', { placeholder: 'Paste LoopNet URL', value: url, onChange: e => setUrl(e.target.value), rows: 3 }),
+            React.createElement('button', { className: 'btn btn-primary', onClick: addListing }, 'Add Listing'),
+            React.createElement('h3', null, 'Filter'),
+            React.createElement('select', { value: filterStatus, onChange: e => setFilterStatus(e.target.value) },
+              React.createElement('option', { value: 'all' }, 'All'),
+              React.createElement('option', null, 'Not Contacted'),
+              React.createElement('option', null, 'Interested'),
+              React.createElement('option', null, 'Pending'),
+              React.createElement('option', null, 'Pass')
+            ),
+            React.createElement('h3', null, 'Sort'),
+            React.createElement('select', { value: sortBy, onChange: e => setSortBy(e.target.value) },
+              React.createElement('option', { value: 'address' }, 'Address'),
+              React.createElement('option', { value: 'rent' }, 'Rent'),
+              React.createElement('option', { value: 'sf' }, 'Square Feet')
+            ),
+            React.createElement('h3', null, `Properties (${filtered.length})`),
+            filtered.map(p => React.createElement('div', { key: p.id, className: `property-item ${selected === p.id ? 'active' : ''}`, onClick: () => setSelected(p.id) },
+              React.createElement('div', { className: 'property-item-title' }, p.address),
+              React.createElement('div', { className: 'property-item-meta' }, p.rent ? `$${p.rent}/mo` : 'TBD'),
+              React.createElement('div', { className: `property-item-status status-${p.status.replace(' ', '-').toLowerCase()}` }, p.status)
+            ))
+          ),
+          React.createElement('div', { className: 'main' },
+            selected && prop ? React.createElement('div', { className: 'property-detail' },
+              React.createElement('div', { className: 'detail-header' },
+                React.createElement('div', null,
+                  React.createElement('h2', null, prop.address),
+                  React.createElement('p', null, `${prop.suite || ''} • ${prop.sf ? prop.sf.toLocaleString() : 'TBD'} SF`)
+                ),
+                React.createElement('button', { className: 'btn btn-danger', onClick: deleteProp }, 'Delete')
+              ),
+              React.createElement('div', { className: 'detail-grid' },
+                React.createElement('div', null,
+                  React.createElement('h3', null, 'Details'),
+                  React.createElement('div', { className: 'form-group' },
+                    React.createElement('label', null, 'Address'),
+                    React.createElement('input', { value: prop.address || '', onChange: e => updateProp('address', e.target.value) })
+                  ),
+                  React.createElement('div', { className: 'form-group' },
+                    React.createElement('label', null, 'Suite'),
+                    React.createElement('input', { value: prop.suite || '', onChange: e => updateProp('suite', e.target.value) })
+                  ),
+                  React.createElement('div', { className: 'form-group' },
+                    React.createElement('label', null, 'SF'),
+                    React.createElement('input', { type: 'number', value: prop.sf || '', onChange: e => updateProp('sf', parseInt(e.target.value) || 0) })
+                  ),
+                  React.createElement('div', { className: 'form-group' },
+                    React.createElement('label', null, 'Rent'),
+                    React.createElement('input', { type: 'number', value: prop.rent || '', onChange: e => updateProp('rent', parseInt(e.target.value) || 0) })
+                  ),
+                  React.createElement('div', { className: 'form-group' },
+                    React.createElement('label', null, 'Type'),
+                    React.createElement('input', { value: prop.type || '', onChange: e => updateProp('type', e.target.value), placeholder: 'Full Service, NNN' })
+                  ),
+                  React.createElement('div', { className: 'form-group' },
+                    React.createElement('label', null, 'Broker'),
+                    React.createElement('input', { value: prop.broker || '', onChange: e => updateProp('broker', e.target.value) })
+                  ),
+                  React.createElement('div', { className: 'form-group' },
+                    React.createElement('label', null, 'Phone'),
+                    React.createElement('input', { value: prop.phone || '', onChange: e => updateProp('phone', e.target.value) })
+                  ),
+                  React.createElement('div', { className: 'form-group' },
+                    React.createElement('label', null, 'LoopNet URL'),
+                    React.createElement('input', { value: prop.loopnetUrl || '', onChange: e => updateProp('loopnetUrl', e.target.value) })
+                  ),
+                  React.createElement('div', { className: 'form-group' },
+                    React.createElement('label', null, 'Status'),
+                    React.createElement('select', { value: prop.status || 'Not Contacted', onChange: e => updateProp('status', e.target.value) },
+                      React.createElement('option', null, 'Not Contacted'),
+                      React.createElement('option', null, 'Interested'),
+                      React.createElement('option', null, 'Pending'),
+                      React.createElement('option', null, 'Pass')
+                    )
+                  )
+                ),
+                React.createElement('div', null,
+                  React.createElement('h3', null, 'Notes'),
+                  React.createElement('textarea', { value: notes, onChange: e => setNotes(e.target.value), placeholder: 'Add notes...' }),
+                  React.createElement('button', { className: 'btn btn-primary', onClick: saveNotes }, 'Save Notes')
+                )
+              )
+            ) : React.createElement('div', { className: 'empty-state' }, 'Select a property to view details')
+          )
+        )
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+  </script>
+</body>
+</html>
